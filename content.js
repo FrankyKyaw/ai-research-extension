@@ -1,21 +1,43 @@
-// const article = document.querySelector("article");
+console.log('Content script loaded');
 
-// if (article) {
-//   const text = article.textContent;
-//   const wordMatchRegExp = /[^\s]+/g; // Regular expression
-//   const words = text.matchAll(wordMatchRegExp);
-//   // matchAll returns an iterator, convert to array to get word count
-//   const wordCount = [...words].length;
-//   const readingTime = Math.round(wordCount / 200);
-//   const badge = document.createElement("p");
-//   // Use the same styling as the publish information in an article's header
-//   badge.classList.add("color-secondary-text", "type--caption");
-//   badge.textContent = `⏱️ ${readingTime} min read`;
+// Inject pageScript.js into the page context
+const script = document.createElement('script');
+script.src = chrome.runtime.getURL('pageScript.js');
+(document.head || document.documentElement).appendChild(script);
+script.onload = function () {
+  this.remove();
+};
 
-//   // Support for API reference docs
-//   const heading = article.querySelector("h1");
-//   // Support for article docs with date
-//   const date = article.querySelector("time")?.parentNode;
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'summarize') {
+    console.log('Content script received message:', request.action);
 
-//   (date ?? heading).insertAdjacentElement("afterend", badge);
-// }
+    // Forward the request to the page script
+    window.postMessage(
+      {
+        type: 'AI_SUMMARIZE',
+        text: request.text,
+      },
+      '*'
+    );
+  }
+});
+
+window.addEventListener('message', (event) => {
+  // We only accept messages from ourselves
+  if (event.source !== window) {
+    return;
+  }
+
+  if (event.data.type && event.data.type === 'AI_SUMMARIZE_RESULT') {
+    const result = event.data.result;
+    console.log('Summary:', result);
+    // Optionally, you can display the result in the page
+  }
+
+  if (event.data.type && event.data.type === 'AI_SUMMARIZE_ERROR') {
+    const error = event.data.error;
+    console.error('Error:', error);
+  }
+  console.log('finally case');
+});
