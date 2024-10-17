@@ -6,7 +6,8 @@
     "permissions": [
         "contextMenus",
         "scripting",
-        "activeTab"
+        "activeTab",
+        "sidePanel"
     ],
     "background": {
         "service_worker": "background.js"
@@ -14,6 +15,9 @@
     "host_permissions": [
         "<all_urls>"
     ],
+    "side_panel": {
+        "default_path": "sidepanel/index.html"
+    },
     "content_scripts": [
         {
             "matches": [

@@ -8,7 +8,6 @@ window.addEventListener('message', async (event) => {
   }
 
   if (event.data.type && event.data.type === 'AI_SUMMARIZE') {
-    console.log('pageScript.js received message:', event.data.type);
     const text = event.data.text;
   
     try {

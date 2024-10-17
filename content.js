@@ -9,17 +9,27 @@ script.onload = function () {
 };
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'summarize') {
+  if (request.action === 'summarizeSelection') {
     console.log('Content script received message:', request.action);
-
-    // Forward the request to the page script
-    window.postMessage(
-      {
-        type: 'AI_SUMMARIZE',
-        text: request.text,
-      },
-      '*'
-    );
+    const selection = window.getSelection().toString();
+    if (selection) {
+      window.postMessage({ type: 'AI_SUMMARIZE', text: selection }, '*');
+      window.addEventListener('message', function handler(event) {
+        if (event.source !== window) {
+          return;
+        }
+        if (event.data.type === "AI_SUMMARIZE_RESULT") {
+          sendResponse({ result: event.data.result });
+          window.removeEventListener('message', handler);
+        } else if (event.data.type === "AI_SUMMARIZE_ERROR") {
+          sendResponse({ error: event.data.error });
+          window.removeEventListener('message', handler);
+        }
+      });
+      return true;
+    } else {
+      sendResponse({ error: 'No text selected' });
+    }
   }
 });
 
