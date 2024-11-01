@@ -15,6 +15,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+let pdfTextCache = {};
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === "fetchPdf") {
+    try {
+      (async () => {
+        const response = await fetch(message.url);
+        const arrayBuffer = await response.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        console.log("PDF fetched successfully:", {
+          size: arrayBuffer.byteLength,
+          url: message.url,
+        });
+        sendResponse({ success: true, data: Array.from(uint8Array) });
+    })();
+    } catch (error) {
+      console.error("Error fetching PDF:", error);
+      sendResponse({ success: false, error: error.message });
+    }
+    return true; // Indicates that sendResponse will be called asynchronously
+  } else if (message.action === "pdfTextExtracted") {
+    pdfTextCache[sender.tab.id] = message.text;
+    console.log(message.text);
+  } else if (message.action === "getPdfText") {
+    const text = pdfTextCache[sender.tab.id];
+    if (text) {
+      sendResponse({ success: true, text });
+    } else {
+      sendResponse({ success: false, error: "PDF text not available." });
+    }
+    return true;
+  }
+});
+
 // const welcomePage = "sidepanel/welcome.htlm";
 // const mainPage = "sidepanel/index.html";
 
