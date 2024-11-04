@@ -1,3 +1,12 @@
+importScripts("lib/pdfjs/pdf.min.js");
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL(
+  "lib/pdfjs/pdf.worker.min.js"
+);
+
+let pdfSectionsCache = {};
+let pdfProcessingStatus = {};
+
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error(error));
@@ -15,7 +24,101 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-let pdfTextCache = {};
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === "getPdfSections") {
+    const status = pdfProcessingStatus[message.tabId];
+    const sections = pdfSectionsCache[message.tabId];
+    if (status === 'processing') {
+      sendResponse({ success: false, error: "PDF is still being processed." });
+    } else if (status === 'complete' && sections) {
+      sendResponse({ success: true, sections });
+    } else if (status === 'error') {
+      sendResponse({ success: false, error: "Error processing PDF." });
+    } else {
+      // If no processing has started yet, start it
+      const tab = { id: message.tabId, url: message.url };
+      processPdfInTab(tab);
+      sendResponse({ success: false, error: "Started PDF processing." });
+    }
+    return true;
+}});
+
+chrome.action.onClicked.addListener(async (tab) => {
+  if (tab.url.endsWith(".pdf") || tab.url.includes(".pdf?")) {
+    // The current tab is a PDF
+    console.log("PDF detected in tab:", tab.id);
+    await processPdfInTab(tab);
+  } else {
+    console.log("Not a PDF tab.");
+  }
+});
+
+async function processPdfInTab(tab) {
+  try {
+    const response = await fetch(tab.url);
+    const arrayBuffer = await response.arrayBuffer();
+    const pdfData = new Uint8Array(arrayBuffer);
+
+    const sections = await extractSectionsFromPdfData(pdfData);
+
+    pdfSectionsCache[tab.id] = sections;
+  } catch (error) {
+    console.log("Error processing pdf", error);
+  }
+}
+
+async function extractSectionsFromPdfData(pdfData) {
+  try {
+    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+    const pdf = await loadingTask.promise;
+
+    let textItems = [];
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+
+      textContent.items.forEach((item) => {
+        textItems.push({
+          str: item.str,
+          height: item.height,
+          dir: item.dir,
+          fontName: item.fontName,
+          hasEOL: item.hasEOL,
+          transform: item.transform,
+          width: item.width,
+        });
+      });
+    }
+
+    console.log("Before identifying headings");
+    const headings = identifyHeadings(textItems);
+
+    console.log(headings);
+    console.log("after headings");
+    return headings;
+  } catch (error) {
+    console.error("Error extracting sections from PDF data:", error);
+    throw error;
+  }
+}
+
+function identifyHeadings(textItems) {
+  const headingThreshold = 10;
+  let headings = [];
+  let isFirstLargeText = true;
+
+  textItems.forEach((item, index) => {
+    if (item.height >= headingThreshold && item.str.trim().length > 0) {
+      if (isFirstLargeText) {
+        isFirstLargeText = false;
+        return;
+      }
+      headings.push({ text: item.str.trim() });
+    }
+  });
+  return headings;
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "fetchPdf") {
@@ -29,12 +132,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           url: message.url,
         });
         sendResponse({ success: true, data: Array.from(uint8Array) });
-    })();
+      })();
     } catch (error) {
       console.error("Error fetching PDF:", error);
       sendResponse({ success: false, error: error.message });
     }
-    return true; // Indicates that sendResponse will be called asynchronously
+    return true;
   } else if (message.action === "pdfTextExtracted") {
     pdfTextCache[sender.tab.id] = message.text;
     console.log(message.text);

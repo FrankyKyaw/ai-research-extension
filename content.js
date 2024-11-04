@@ -17,6 +17,7 @@ function getOriginalPdfUrl() {
   return null;
 }
 
+
 function isResearchPaper() {
   const url = window.location.href;
   const researchPaperUrlPatterns = [/arxiv\.org\/(?:pdf|html)\//];
@@ -24,30 +25,30 @@ function isResearchPaper() {
   return researchPaperUrlPatterns.some((pattern) => pattern.test(url));
 }
 
-(async function () {
-  if (isResearchPaper()) {
-    console.log("this is a research paper");
-    chrome.runtime.sendMessage({ action: "researchPaperDetected" });
+// (async function () {
+//   if (isResearchPaper()) {
+//     console.log("this is a research paper");
+//     chrome.runtime.sendMessage({ action: "researchPaperDetected" });
 
-    const currentUrl = window.location.href;
-    console.log(currentUrl);
-    try {
-      chrome.runtime.sendMessage(
-        { action: "fetchPdf", url: currentUrl },
-        async (response) => {
-          if (response.success) {
-            const pdfData = response.data;
-            await extractTextFromPdf(pdfData);
-          } else {
-            console.error("Error fetching PDF:", response.error);
-          }
-        }
-      );
-    } catch (error) {
-      console.error("Error fetching PDF:", error);
-    }
-  }
-})();
+//     const currentUrl = window.location.href;
+//     console.log(currentUrl);
+//     try {
+//       chrome.runtime.sendMessage(
+//         { action: "fetchPdf", url: currentUrl },
+//         async (response) => {
+//           if (response.success) {
+//             const pdfData = response.data;
+//             await extractTextFromPdf(pdfData);
+//           } else {
+//             console.error("Error fetching PDF:", response.error);
+//           }
+//         }
+//       );
+//     } catch (error) {
+//       console.error("Error fetching PDF:", error);
+//     }
+//   }
+// })();
 
 async function extractTextFromPdf(pdfData) {
   try {
@@ -60,24 +61,63 @@ async function extractTextFromPdf(pdfData) {
     const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
     const pdf = await loadingTask.promise;
 
-    let textContent = "";
+    let textItems = [];
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
-      const text = await page.getTextContent();
-      const pageText = text.items.map((item) => item.str).join(" ");
-      textContent += pageText + "\n\n";
+      const textContent = await page.getTextContent();
+
+      textContent.items.forEach((item) => {
+        textItems.push({
+          str: item.str,
+          height: item.height,
+          dir: item.dir,
+          fontName: item.fontName,
+          hasEOL: item.hasEOL,
+          transform: item.transform,
+          width: item.width,
+        });
+      });
     }
+
+    console.log('before headings')
+    // Identify headings
+    const headings = identifyHeadings(textItems);
+
+    console.log(headings);
+    console.log('after headings')
+    // // Split text into sections
+    // const sections = splitTextIntoSections(textItems, headings);
+
+    // // Optionally, filter sections between "Abstract" and "References"
+    // const filteredSections = filterSections(sections);
 
     chrome.runtime.sendMessage({
       action: "pdfTextExtracted",
-      text: textContent,
+      text: textItems,
     });
-    return textContent;
   } catch (error) {
-    console.error("Error extracting PDF text: ", error);
+    console.error("Error extracting PDF sections: ", error);
     throw error;
   }
+}
+
+
+function identifyHeadings(textItems) {
+  const headingThreshold = 10;
+  let headings = [];
+  let isFirstLargeText = true;
+
+  textItems.forEach((item, index) => {
+    if (item.height >= headingThreshold && item.str.trim().length > 0) {
+      if (isFirstLargeText) {
+        isFirstLargeText = false;
+        return
+      }
+      headings.push({text: item.str.trim()})
+    } 
+  })
+  return headings;
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
